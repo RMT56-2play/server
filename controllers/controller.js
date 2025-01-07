@@ -11,6 +11,17 @@ class Controller {
     }
   }
 
+  static async createUser(req, res) {
+    try {
+      const user = await User.create(req.body);
+      res.status(201).json({
+        username: user.name
+      })
+    } catch (error) {
+      console.log(error)
+    }
+  }
+
   static async createGame(req, res) {
     try {
       const game = await Game.create(req.body);
