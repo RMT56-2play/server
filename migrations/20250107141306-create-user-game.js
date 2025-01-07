@@ -12,16 +12,20 @@ module.exports = {
       UserId: {
         type: Sequelize.INTEGER,
         references: {
-          model: "Users",
-          key: "id",
+          model: "Users", 
+          key: "id", 
         },
+        onUpdate: "CASCADE", 
+        onDelete: "CASCADE", 
       },
       GameId: {
         type: Sequelize.INTEGER,
         references: {
-          model: "Games",
-          key: "id",
+          model: "Games", 
+          key: "id", 
         },
+        onUpdate: "CASCADE", 
+        onDelete: "CASCADE", 
       },
       playerCards: {
         type: Sequelize.ARRAY(Sequelize.ARRAY(Sequelize.INTEGER)),
