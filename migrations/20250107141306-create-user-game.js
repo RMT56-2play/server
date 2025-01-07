@@ -11,9 +11,17 @@ module.exports = {
       },
       UserId: {
         type: Sequelize.INTEGER,
+        references: {
+          model: "Users",
+          key: "id",
+        },
       },
       GameId: {
         type: Sequelize.INTEGER,
+        references: {
+          model: "Games",
+          key: "id",
+        },
       },
       playerCards: {
         type: Sequelize.ARRAY(Sequelize.ARRAY(Sequelize.INTEGER)),
