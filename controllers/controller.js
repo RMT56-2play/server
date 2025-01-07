@@ -15,7 +15,7 @@ class Controller {
     const { username, gameId } = req.body;
 
     try {
-      const gameExist = await UserGame.findOne({ where: { gameId } });
+      const gameExist = await UserGame.findOne({ where: { GameId: gameId } });
 
       if (!gameExist) {
         return res.status(404).json({
