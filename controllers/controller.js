@@ -10,6 +10,15 @@ class Controller {
       console.log(error);
     }
   }
+
+  static async createGame(req, res) {
+    try {
+      const game = await Game.create(req.body);
+      res.status(201).json(game)
+    } catch (error) {
+      console.log(error)
+    }
+  }
 }
 
 module.exports = { Controller };
