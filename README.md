@@ -18,6 +18,13 @@
    npm install
    ```
 
+3. **Setup Database Postgres**
+
+   ```sh
+   npx sequelize-cli db:create
+   npx sequelize-cli db:migrate
+   ```
+
 ## Access the application
 
 - Backend: http://localhost:3000
