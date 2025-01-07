@@ -83,47 +83,26 @@ class Controller {
       const { username } = req.body;
       const user = await User.create({ username });
       const game = await Game.create({
-        deckCards: this.shuffleCards(),
+        deckCards: Controller.shuffleCards(),
         status: "waiting",
       });
       const userGame = await UserGame.create({
         UserId: user.id,
         GameId: game.id,
+        playerCards: [],
       });
-      res.status(201).json(user, game, userGame);
+      res.status(201).json({
+        user: { id: user.id, username: user.username },
+        game: { id: game.id, status: game.status },
+        userGame: {
+          id: userGame.id,
+          UserId: userGame.UserId,
+          GameId: userGame.GameId,
+          playerCards: userGame.playerCards,
+        },
+      });
     } catch (error) {
       console.log(error);
-    }
-  }
-
-  static async joinGame(req, res) {
-    const { username, gameId } = req.body;
-
-    try {
-      const gameExist = await UserGame.findOne({ where: { gameId } });
-
-      if (!gameExist) {
-        return res.status(404).json({
-          message: "Game not found",
-        });
-      } else {
-        const user = await User.create({ username });
-
-        await UserGame.create({
-          UserId: user.id,
-          GameId: gameId,
-          playerCards: [],
-        });
-
-        return res.status(201).json({
-          message: "User successfully joined the game",
-        });
-      }
-    } catch (error) {
-      console.error("Error joining game:", error);
-      return res.status(500).json({
-        message: "An error occurred while trying to join the game",
-      });
     }
   }
 }
