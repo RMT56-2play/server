@@ -83,16 +83,26 @@ class Controller {
       const { username } = req.body;
       const user = await User.create({ username });
       const game = await Game.create({
-        deckCards: this.shuffleCards(),
+        deckCards: Controller.shuffleCards(),
         status: "waiting",
       });
       const userGame = await UserGame.create({
         UserId: user.id,
         GameId: game.id,
+        playerCards: [],
       });
-      res.status(201).json(user, game, userGame)
+      res.status(201).json({
+        user: { id: user.id, username: user.username },
+        game: { id: game.id, status: game.status },
+        userGame: {
+          id: userGame.id,
+          UserId: userGame.UserId,
+          GameId: userGame.GameId,
+          playerCards: userGame.playerCards,
+        },
+      });
     } catch (error) {
-      console.log(error)
+      console.log(error);
     }
   }
 }
