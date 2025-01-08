@@ -100,20 +100,35 @@ class Controller {
           GameId: userGame.GameId,
           playerCards: userGame.playerCards,
         },
+        message: "Game created successfully",
       });
     } catch (error) {
       console.log(error);
     }
   }
-    static async joinGame(req, res) {
+  static async joinGame(req, res) {
     const { username, gameId } = req.body;
 
     try {
-      const gameExist = await UserGame.findOne({ where: { GameId: gameId } });
-
-      if (!gameExist) {
+      const game = await Game.findOne({ where: { id: gameId } });
+      if (!game) {
         return res.status(404).json({
           message: "Game not found",
+        });
+      }
+      if (game.status === "playing") {
+        return res.status(400).json({
+          message: "Game is already in progress",
+        });
+      } else if (game.status === "ended") {
+        return res.status(400).json({
+          message: "Game has ended",
+        });
+      }
+      const players = await UserGame.findAll({ where: { GameId: gameId } });
+      if (players.length > 4) {
+        return res.status(400).json({
+          message: "Game is full",
         });
       } else {
         const user = await User.create({ username });
@@ -125,6 +140,7 @@ class Controller {
         });
 
         return res.status(201).json({
+          user: { id: user.id, username: user.username },
           message: "User successfully joined the game",
         });
       }
@@ -132,6 +148,170 @@ class Controller {
       console.error("Error joining game:", error);
       return res.status(500).json({
         message: "An error occurred while trying to join the game",
+      });
+    }
+  }
+
+  static async startGame(req, res) {
+    try {
+      const { gameId } = req.body;
+      const game = await Game.findByPk(gameId);
+      if (!game) {
+        return res.status(404).json({
+          message: "Game not found",
+        });
+      }
+      if (game.status === "playing") {
+        return res.status(400).json({
+          message: "Game is already in progress",
+        });
+      } else if (game.status === "ended") {
+        return res.status(400).json({
+          message: "Game has ended",
+        });
+      }
+      const players = await UserGame.findAll({ where: { GameId: gameId } });
+      if (players.length < 2) {
+        return res.status(400).json({
+          message: "Not enough players to start the game",
+        });
+      }
+      const deckCards = [...game.deckCards];
+      for (const player of players) {
+        const topCard = deckCards.shift();
+        var playerCards = player.dataValues.playerCards;
+        playerCards.unshift(topCard);
+        await UserGame.update(
+          { playerCards: playerCards },
+          { where: { UserId: player.id, GameId: gameId } }
+        );
+      }
+      await Game.update(
+        { deckCards: deckCards, status: "playing" },
+        { where: { id: gameId } }
+      );
+      return res.status(200).json({
+        message: "Game started successfully",
+      });
+    } catch (error) {
+      console.error("Error starting game:", error);
+      return res.status(500).json({
+        message: "An error occurred while trying to start the game",
+      });
+    }
+  }
+
+  static async action(req, res) {
+    try {
+      const { gameId, userId, imageId } = req.body;
+      const game = await Game.findByPk(gameId);
+      if (!game) {
+        return res.status(404).json({
+          message: "Game not found",
+        });
+      }
+      if (game.status === "waiting") {
+        return res.status(400).json({
+          message: "Game has not started yet",
+        });
+      } else if (game.status === "ended") {
+        return res.status(400).json({
+          message: "Game has ended",
+        });
+      }
+      const player = await UserGame.findOne({
+        where: { UserId: userId, GameId: gameId },
+        include: [{ model: User, attributes: ["username"] }],
+      });
+      if (!player) {
+        return res.status(404).json({
+          message: "Player not found",
+        });
+      }
+      const playerCards = [...player.dataValues.playerCards];
+      const deckCards = [...game.deckCards];
+      const topCard = deckCards.shift();
+
+      const imageIndexPlayer = playerCards[0].indexOf(Number(imageId));
+      const imageIndexDeck = topCard.indexOf(Number(imageId));
+
+      if (imageIndexDeck !== -1 && imageIndexPlayer !== -1) {
+        playerCards.unshift(topCard);
+        await UserGame.update(
+          { playerCards: playerCards },
+          { where: { UserId: userId, GameId: gameId } }
+        );
+        await Game.update({ deckCards: deckCards }, { where: { id: gameId } });
+      } else {
+        return res.status(400).json({
+          message: "Image not matched",
+        });
+      }
+
+      const currentGame = await Game.findByPk(gameId);
+      if (currentGame.deckCards.length !== 0) {
+        const players = await UserGame.findAll({
+          where: { GameId: gameId },
+          include: [{ model: User, attributes: ["username"] }],
+        });
+        const playerScores = players.map((player) => {
+          return {
+            username: player.dataValues.User.username,
+            score: player.dataValues.playerCards.length,
+          };
+        });
+        return res.status(200).json({
+          playerScores: playerScores,
+          message: `${player.dataValues.User.username} gets the card (+1pt)`,
+        });
+      } else {
+        Controller.endGame(req, res);
+      }
+    } catch (error) {
+      console.error("Error performing action:", error);
+      return res.status(500).json({
+        message: "An error occurred while trying to perform the action",
+      });
+    }
+  }
+
+  static async endGame(req, res) {
+    try {
+      const { gameId } = req.body;
+      const game = await Game.findByPk(gameId);
+      if (!game) {
+        return res.status(404).json({
+          message: "Game not found",
+        });
+      }
+      if (game.status === "waiting") {
+        return res.status(400).json({
+          message: "Game has not started yet",
+        });
+      } else if (game.status === "ended") {
+        return res.status(400).json({
+          message: "Game has already ended",
+        });
+      }
+      const players = await UserGame.findAll({
+        where: { GameId: gameId },
+        include: [{ model: User, attributes: ["username"] }],
+      });
+      const playerScores = players.map((player) => {
+        return {
+          username: player.dataValues.User.username,
+          score: player.dataValues.playerCards.length,
+        };
+      });
+      await Game.update({ status: "ended" }, { where: { id: gameId } });
+      return res.status(200).json({
+        playerScores: playerScores,
+        message: "Game ended successfully",
+      });
+    } catch (error) {
+      console.error("Error ending game:", error);
+      return res.status(500).json({
+        message: "An error occurred while trying to end the game",
       });
     }
   }
