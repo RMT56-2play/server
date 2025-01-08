@@ -133,7 +133,7 @@ class Controller {
       } else {
         const user = await User.create({ username });
 
-        await UserGame.create({
+        const userGame = await UserGame.create({
           UserId: user.id,
           GameId: gameId,
           playerCards: [],
@@ -141,6 +141,13 @@ class Controller {
 
         return res.status(201).json({
           user: { id: user.id, username: user.username },
+          game: { id: game.id, status: game.status },
+          userGame: {
+            id: userGame.id,
+            UserId: userGame.UserId,
+            GameId: userGame.GameId,
+            playerCards: userGame.playerCards,
+          },
           message: "User successfully joined the game",
         });
       }
@@ -170,7 +177,7 @@ class Controller {
           message: "Game has ended",
         });
       }
-      const players = await UserGame.findAll({ where: { GameId: gameId } });
+      const players = await UserGame.findAll({ where: { GameId: gameId }, include: [{ model: User, attributes: ["username"] }]});
       if (players.length < 2) {
         return res.status(400).json({
           message: "Not enough players to start the game",
@@ -190,7 +197,20 @@ class Controller {
         { deckCards: deckCards, status: "playing" },
         { where: { id: gameId } }
       );
+      const currentGame = await Game.findByPk(gameId);
+      const playerScores = players.map((player) => {
+        return {
+          username: player.dataValues.User.username,
+          score: player.dataValues.playerCards.length, 
+          playerCards: player.dataValues.playerCards,
+        };
+      });
       return res.status(200).json({
+        players: playerScores, // Send player scores
+        game: {
+          deckCards: currentGame.deckCards,
+          status: currentGame.status,
+        },
         message: "Game started successfully",
       });
     } catch (error) {
@@ -258,10 +278,15 @@ class Controller {
           return {
             username: player.dataValues.User.username,
             score: player.dataValues.playerCards.length,
+            playerCards: player.dataValues.playerCards,
           };
         });
         return res.status(200).json({
-          playerScores: playerScores,
+          players: playerScores,
+          game: {
+            deckCards: currentGame.deckCards,
+            status: currentGame.status,
+          },
           message: `${player.dataValues.User.username} gets the card (+1pt)`,
         });
       } else {
