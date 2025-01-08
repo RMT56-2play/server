@@ -9,6 +9,8 @@ const port = 3000;
 
 const app = express();
 const cors = require("cors");
+const errorHandler = require("./middlewares/errorHandler");
+
 const server = createServer(app);
 
 const io = new Server(server, {
@@ -24,6 +26,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(router);
+
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`Listening to port http://localhost:${port}/`);
