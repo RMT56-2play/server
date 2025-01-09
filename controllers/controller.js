@@ -1,4 +1,7 @@
 const { User, Game, UserGame } = require("../models");
+// const { io } = require("../app");
+const socket = require("../socket");
+const io = socket.getIO();
 
 class Controller {
   static async getGame(req, res, next) {
@@ -91,6 +94,7 @@ class Controller {
         GameId: game.id,
         playerCards: [],
       });
+
       res.status(201).json({
         user: { id: user.id, username: user.username },
         game: { id: game.id, status: game.status },
@@ -131,6 +135,15 @@ class Controller {
           playerCards: [],
         });
 
+        const updatedPlayers = await UserGame.findAll({
+          where: { GameId: gameId },
+          include: [{ model: User, attributes: ["username"] }],
+        });
+
+        io.to(`waiting-${gameId}`).emit("playerListUpdate", {
+          players: updatedPlayers,
+        });
+
         return res.status(201).json({
           user: { id: user.id, username: user.username },
           game: { id: game.id, status: game.status },
@@ -150,9 +163,7 @@ class Controller {
 
   static async waitPlayer(req, res, next) {
     try {
-      //get all user related to this gameId
       const gameId = Number(req.query.gameId);
-      // console.log(req.query.gameId);
       const players = await UserGame.findAll({
         where: { GameId: gameId },
         include: [{ model: User, attributes: ["username"] }],
@@ -160,6 +171,12 @@ class Controller {
       if (players.length <= 0) {
         throw { name: "NotFound", message: "Game not found" };
       }
+
+      io.to(`waiting-${gameId}`).emit("playerListUpdate", {
+        players: players,
+        message: "Waiting for players",
+      });
+
       res.status(200).json({
         players: players,
         message: "Waiting for players",
@@ -214,8 +231,18 @@ class Controller {
           playerCards: player.dataValues.playerCards,
         };
       });
+
+      io.to(`waiting-${gameId}`).emit("gameStart", {
+        players: playerScores,
+        game: {
+          deckCards: currentGame.deckCards,
+          status: currentGame.status,
+        },
+        message: "Game started successfully",
+      });
+
       return res.status(200).json({
-        players: playerScores, // Send player scores
+        players: playerScores,
         game: {
           deckCards: currentGame.deckCards,
           status: currentGame.status,
@@ -262,6 +289,9 @@ class Controller {
         await Game.update({ deckCards: deckCards }, { where: { id: gameId } });
       } else {
         throw { name: "BadRequest", message: "Image not matched" };
+        // return res.status(400).json({
+        //   message: "Image not matched",
+        // });
       }
 
       const currentGame = await Game.findByPk(gameId);
@@ -278,6 +308,16 @@ class Controller {
             playerCards: player.dataValues.playerCards,
           };
         });
+
+        io.to(`game-${gameId}`).emit("gameStateUpdate", {
+          players: playerScores,
+          game: {
+            deckCards: currentGame.deckCards,
+            status: currentGame.status,
+          },
+          message: `${player.dataValues.User.username} gets the card (+1pt)`,
+        });
+
         return res.status(200).json({
           players: playerScores,
           game: {
@@ -287,10 +327,11 @@ class Controller {
           message: `${player.dataValues.User.username} gets the card (+1pt)`,
         });
       } else {
-        Controller.endGame(req, res);
+        Controller.endGame(gameId);
       }
     } catch (error) {
-      next(error);
+      throw error;
+      // return res.status(500).json({ success: false, message: error.message });
     }
   }
 
@@ -315,6 +356,11 @@ class Controller {
         throw { name: "NotFound", message: "Player not found" };
       }
       const playerCards = player.dataValues.playerCards;
+
+      io.to(`player-${userId}`).emit("playerCardsUpdate", {
+        playerCards: playerCards,
+      });
+
       return res.status(200).json({
         playerCards: playerCards,
       });
@@ -336,6 +382,11 @@ class Controller {
         throw { name: "BadRequest", message: "Game has ended" };
       }
       const deckCards = game.deckCards;
+
+      io.to(`game-${gameId}`).emit("deckCardsUpdate", {
+        deckCards: deckCards,
+      });
+
       return res.status(200).json({
         deckCards: deckCards,
       });
@@ -351,58 +402,120 @@ class Controller {
       if (!game) {
         throw { name: "NotFound", message: "Game not found" };
       }
-      if (game.status === "waiting") {
-        throw { name: "BadRequest", message: "Game has not started yet" };
-      }
+
       const players = await UserGame.findAll({
         where: { GameId: gameId },
         include: [{ model: User, attributes: ["id", "username"] }],
       });
-      const playerScores = players.map((player) => {
-        return {
-          id: player.dataValues.User.id,
-          username: player.dataValues.User.username,
-          score: player.dataValues.playerCards.length,
-        };
+
+      const playerScores = players.map((player) => ({
+        id: player.User.id,
+        username: player.User.username,
+        score: player.playerCards.length,
+      }));
+
+      io.to(`game-${gameId}`).emit("scoreboardUpdate", {
+        players: playerScores,
       });
+
       return res.status(200).json({
         players: playerScores,
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  static async getGameState(req, res, next) {
+    try {
+      const { gameId, userId } = req.query;
+      const game = await Game.findByPk(gameId);
+      const players = await UserGame.findAll({
+        where: { GameId: gameId },
+        include: [{ model: User, attributes: ["id", "username"] }],
+      });
+
+      const playerScores = players.map((player) => ({
+        id: player.User.id,
+        username: player.User.username,
+        score: player.playerCards.length,
+        playerCards: player.playerCards,
+      }));
+
+      res.status(200).json({
+        players: playerScores,
+        game: {
+          deckCards: game.deckCards,
+          status: game.status,
+        },
       });
     } catch (error) {
       next(error);
     }
   }
 
-  static async endGame(req, res, next) {
-    try {
-      const { gameId } = req.body;
-      const game = await Game.findByPk(gameId);
-      if (!game) {
-        throw { name: "NotFound", message: "Game not found" };
-      }
-      if (game.status === "waiting") {
-        throw { name: "BadRequest", message: "Game has not started yet" };
-      } else if (game.status === "ended") {
-        throw { name: "BadRequest", message: "Game has ended" };
-      }
-      const players = await UserGame.findAll({
-        where: { GameId: gameId },
-        include: [{ model: User, attributes: ["username"] }],
-      });
-      const playerScores = players.map((player) => {
-        return {
-          username: player.dataValues.User.username,
-          score: player.dataValues.playerCards.length,
-        };
-      });
-      await Game.update({ status: "ended" }, { where: { id: gameId } });
-      return res.status(200).json({
-        playerScores: playerScores,
-        message: "Game ended",
-      });
-    } catch (error) {
-      next(error);
+  // static async endGame(req, res, next) {
+  //   try {
+  //     const { gameId } = req.body;
+  //     const game = await Game.findByPk(gameId);
+  //     if (!game) {
+  //       throw { name: "NotFound", message: "Game not found" };
+  //     }
+  //     if (game.status === "waiting") {
+  //       throw { name: "BadRequest", message: "Game has not started yet" };
+  //     } else if (game.status === "ended") {
+  //       throw { name: "BadRequest", message: "Game has ended" };
+  //     }
+  //     const players = await UserGame.findAll({
+  //       where: { GameId: gameId },
+  //       include: [{ model: User, attributes: ["username"] }],
+  //     });
+  //     const playerScores = players.map((player) => {
+  //       return {
+  //         username: player.dataValues.User.username,
+  //         score: player.dataValues.playerCards.length,
+  //       };
+  //     });
+  //     await Game.update({ status: "ended" }, { where: { id: gameId } });
+
+  //     io.to(`game-${gameId}`).emit("gameEnded", {
+  //       playerScores: playerScores,
+  //       message: "Game ended",
+  //     });
+
+  //     return res.status(200).json({
+  //       playerScores: playerScores,
+  //       message: "Game ended",
+  //     });
+  //   } catch (error) {
+  //     throw error;
+  //   }
+  // }
+
+  static async endGame(gameId) {
+    const game = await Game.findByPk(gameId);
+    if (!game) {
+      throw new Error("Game not found");
     }
+
+    const players = await UserGame.findAll({
+      where: { GameId: gameId },
+      include: [{ model: User, attributes: ["username"] }],
+    });
+
+    const playerScores = players.map((player) => ({
+      username: player.dataValues.User.username,
+      score: player.dataValues.playerCards.length,
+    }));
+
+    await Game.update({ status: "ended" }, { where: { id: gameId } });
+
+    socket.getIO().to(`game-${gameId}`).emit("gameEnded", {
+      playerScores: playerScores,
+      message: "Game ended",
+    });
+
+    return playerScores;
   }
 }
 
