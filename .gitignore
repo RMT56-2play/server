@@ -1,3 +1,5 @@
 node_modules
 npx.txt
 .env
+juang-site-key.pem
+ecosystem.config.js
